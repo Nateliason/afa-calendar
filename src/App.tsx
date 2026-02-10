@@ -1,552 +1,452 @@
 import { useMemo, useState } from 'react'
 import { calendarEvents, sessions } from './data/curriculum'
-import { getBlockTypePresentation, getBlockTypesInLegendOrder, getDayBlockTypes } from './chunkView'
-import { getBlockDescription, getDayHeading } from './dayView'
-import { buildChunkPreview } from './sessionView'
-import { getBlockCardClassName, truncateBlockDescription } from './weekView'
+import type { Session, TwoWeekChunk, WeekPlan, DayPlan } from './data/curriculum'
 import { buildYearOverviewSegments } from './yearOverview'
 
-type ZoomLevel = 'year' | 'session' | 'chunk' | 'week' | 'day'
+type View =
+  | { level: 'year' }
+  | { level: 'session'; session: Session }
+  | { level: 'chunk'; session: Session; chunk: TwoWeekChunk }
+  | { level: 'week'; session: Session; chunk: TwoWeekChunk; week: WeekPlan }
+  | { level: 'day'; session: Session; chunk: TwoWeekChunk; week: WeekPlan; day: DayPlan }
 
-type BreadcrumbItem = {
-  label: string
-  level: ZoomLevel
+const blockColors: Record<string, { bg: string; text: string; dot: string }> = {
+  workshop:     { bg: 'bg-amber-50 border-amber-200', text: 'text-amber-700', dot: 'bg-amber-400' },
+  business:     { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', dot: 'bg-blue-400' },
+  media:        { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', dot: 'bg-emerald-400' },
+  roundtable:   { bg: 'bg-violet-50 border-violet-200', text: 'text-violet-700', dot: 'bg-violet-400' },
+  harkness:     { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700', dot: 'bg-rose-400' },
+  presentation: { bg: 'bg-orange-50 border-orange-200', text: 'text-orange-700', dot: 'bg-orange-400' },
+  reflection:   { bg: 'bg-slate-50 border-slate-200', text: 'text-slate-600', dot: 'bg-slate-400' },
+  fitness:      { bg: 'bg-slate-50/50 border-slate-100', text: 'text-slate-400', dot: 'bg-slate-300' },
+  academics:    { bg: 'bg-slate-50/50 border-slate-100', text: 'text-slate-400', dot: 'bg-slate-300' },
+  awards:       { bg: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-700', dot: 'bg-yellow-400' },
+  other:        { bg: 'bg-slate-50 border-slate-200', text: 'text-slate-600', dot: 'bg-slate-400' },
+}
+
+const blockLabels: Record<string, string> = {
+  workshop: 'Workshop', business: 'Business Work', media: 'Media Discussion',
+  roundtable: 'Roundtable', harkness: 'Harkness Circle', presentation: 'Presentation',
+  reflection: 'Reflection', fitness: 'Fitness', academics: 'Academics',
+  awards: 'Awards', other: 'Other',
 }
 
 function App() {
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null)
-  const [selectedWeekNumber, setSelectedWeekNumber] = useState<number | null>(null)
-  const [selectedDayNumber, setSelectedDayNumber] = useState<number | null>(null)
-
+  const [view, setView] = useState<View>({ level: 'year' })
   const segments = useMemo(() => buildYearOverviewSegments(calendarEvents), [])
-  const blockTypeLegend = useMemo(
-    () =>
-      getBlockTypesInLegendOrder().map((blockType) => ({
-        blockType,
-        presentation: getBlockTypePresentation(blockType),
-      })),
-    [],
-  )
-  const selectedSession = useMemo(
-    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
-    [selectedSessionId],
-  )
-  const selectedChunk = useMemo(
-    () => selectedSession?.chunks.find((chunk) => chunk.id === selectedChunkId) ?? null,
-    [selectedChunkId, selectedSession],
-  )
-  const selectedWeek = useMemo(
-    () => selectedChunk?.weeks.find((week) => week.weekNumber === selectedWeekNumber) ?? null,
-    [selectedChunk, selectedWeekNumber],
-  )
-  const selectedDay = useMemo(
-    () => selectedWeek?.days.find((day) => day.dayNumber === selectedDayNumber) ?? null,
-    [selectedDayNumber, selectedWeek],
-  )
 
-  const currentZoomLevel: ZoomLevel = selectedDay
-    ? 'day'
-    : selectedWeek
-      ? 'week'
-      : selectedChunk
-        ? 'chunk'
-        : selectedSession
-          ? 'session'
-          : 'year'
-
-  const zoomTransitionKey = `${selectedSessionId ?? 'year'}:${selectedChunkId ?? 'chunk'}:${selectedWeekNumber ?? 'week'}:${selectedDayNumber ?? 'day'}`
-
-  const goToZoomLevel = (level: ZoomLevel) => {
-    if (level === 'year') {
-      setSelectedSessionId(null)
-      setSelectedChunkId(null)
-      setSelectedWeekNumber(null)
-      setSelectedDayNumber(null)
-      return
-    }
-
-    if (level === 'session') {
-      setSelectedChunkId(null)
-      setSelectedWeekNumber(null)
-      setSelectedDayNumber(null)
-      return
-    }
-
-    if (level === 'chunk') {
-      setSelectedWeekNumber(null)
-      setSelectedDayNumber(null)
-      return
-    }
-
-    if (level === 'week') {
-      setSelectedDayNumber(null)
-    }
+  const goBack = () => {
+    if (view.level === 'day') setView({ level: 'week', session: view.session, chunk: view.chunk, week: view.week })
+    else if (view.level === 'week') setView({ level: 'chunk', session: view.session, chunk: view.chunk })
+    else if (view.level === 'chunk') setView({ level: 'session', session: view.session })
+    else if (view.level === 'session') setView({ level: 'year' })
   }
 
-  const goBackOneLevel = () => {
-    if (currentZoomLevel === 'day') {
-      goToZoomLevel('week')
-      return
-    }
-
-    if (currentZoomLevel === 'week') {
-      goToZoomLevel('chunk')
-      return
-    }
-
-    if (currentZoomLevel === 'chunk') {
-      goToZoomLevel('session')
-      return
-    }
-
-    if (currentZoomLevel === 'session') {
-      goToZoomLevel('year')
-    }
-  }
-
-  const breadcrumbs: BreadcrumbItem[] = [
-    { label: 'Year', level: 'year' },
-    ...(selectedSession ? [{ label: `Session ${selectedSession.number}`, level: 'session' as const }] : []),
-    ...(selectedChunk ? [{ label: selectedChunk.title, level: 'chunk' as const }] : []),
-    ...(selectedWeek ? [{ label: `Week ${selectedWeek.weekNumber}`, level: 'week' as const }] : []),
-    ...(selectedDay ? [{ label: `Day ${selectedDay.dayNumber}`, level: 'day' as const }] : []),
+  const breadcrumbs: { label: string; action: () => void }[] = [
+    { label: '2026–27', action: () => setView({ level: 'year' }) },
   ]
+  if (view.level !== 'year') {
+    const s = view.session
+    breadcrumbs.push({ label: `Session ${s.number}`, action: () => setView({ level: 'session', session: s }) })
+    if (view.level !== 'session') {
+      const c = view.chunk
+      breadcrumbs.push({ label: c.title, action: () => setView({ level: 'chunk', session: s, chunk: c }) })
+      if (view.level !== 'chunk') {
+        const w = view.week
+        breadcrumbs.push({ label: `Week ${w.weekNumber}`, action: () => setView({ level: 'week', session: s, chunk: c, week: w }) })
+        if (view.level === 'day') {
+          breadcrumbs.push({ label: `Day ${view.day.dayNumber}`, action: () => {} })
+        }
+      }
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
-      <header className="border-b border-slate-200 px-6 py-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">AFA</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-          Alpha Founders Academy — 2026-27 Freshman Year
-        </h1>
+    <div className="min-h-screen bg-stone-50 text-stone-900">
+      {/* Header */}
+      <header className="border-b border-stone-200 bg-white px-6 py-5 sm:px-8">
+        <div className="mx-auto max-w-6xl">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-stone-400">Alpha Founders Academy</p>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">2026–27 Freshman Year</h1>
+        </div>
       </header>
 
-      <main className="px-6 py-6">
-        <style>
-          {`@keyframes zoomLayerIn {
-            from {
-              opacity: 0;
-              transform: translateY(0.25rem);
-            }
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }`}
-        </style>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <nav aria-label="Current zoom level">
-            <ol className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-              {breadcrumbs.map((crumb, index) => {
-                const isCurrentLevel = index === breadcrumbs.length - 1
-
-                return (
-                  <li key={`${crumb.level}-${crumb.label}`} className="flex items-center gap-2">
-                    {index > 0 ? <span aria-hidden="true">&gt;</span> : null}
-                    {isCurrentLevel ? (
-                      <span>{crumb.label}</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="rounded-sm text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline"
-                        onClick={() => goToZoomLevel(crumb.level)}
-                      >
-                        {crumb.label}
-                      </button>
-                    )}
-                  </li>
-                )
-              })}
-            </ol>
-          </nav>
-
-          <button
-            type="button"
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={goBackOneLevel}
-            disabled={currentZoomLevel === 'year'}
-          >
-            Back
-          </button>
-        </div>
-
-        <section aria-label="Block type legend" className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="mr-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Block Type Legend</p>
-            {blockTypeLegend.map(({ blockType, presentation }) => (
-              <span
-                key={blockType}
-                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${presentation.badgeClassName}`}
-              >
-                {presentation.label}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        <section aria-label="Year overview timeline" className="mt-8 space-y-4">
-          <div className="flex items-end justify-between gap-4">
-            <h2 className="text-lg font-semibold tracking-tight">Year Overview</h2>
-            <p className="text-sm text-slate-600">Click a session block to zoom in</p>
-          </div>
-
-          <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-            {segments.map((segment) => {
-              const commonClasses =
-                'group relative flex min-h-24 items-end border-r border-white px-2 py-2 text-left text-xs font-medium transition hover:brightness-95 last:border-r-0'
-
-              if (segment.isSession) {
-                return (
-                  <button
-                    key={segment.id}
-                    type="button"
-                    className={`${commonClasses} cursor-pointer text-white`}
-                    style={{
-                      width: `${segment.widthPercent}%`,
-                      backgroundColor: segment.color,
-                    }}
-                    onClick={() => {
-                      setSelectedSessionId(segment.id)
-                      setSelectedChunkId(null)
-                      setSelectedWeekNumber(null)
-                      setSelectedDayNumber(null)
-                    }}
-                    aria-pressed={selectedSessionId === segment.id}
-                  >
-                    <span className="w-full truncate">{segment.title}</span>
-                  </button>
-                )
-              }
-
-              return (
-                <div
-                  key={segment.id}
-                  className={`${commonClasses} ${
-                    segment.isBreak ? 'bg-slate-300 text-slate-700' : 'text-white'
-                  }`}
-                  style={{
-                    width: `${segment.widthPercent}%`,
-                    ...(segment.isBreak ? {} : { backgroundColor: segment.color }),
-                  }}
-                >
-                  <span className="w-full truncate">{segment.title}</span>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-
-        <div
-          key={zoomTransitionKey}
-          className="mt-8 space-y-8 motion-reduce:animate-none"
-          style={{ animation: 'zoomLayerIn 200ms ease-out' }}
-        >
-          {selectedSession ? (
-            <section aria-label="Session view" className="rounded-xl border border-slate-200 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold tracking-tight">
-                Session {selectedSession.number}: {selectedSession.title}
-              </h3>
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                onClick={() => goToZoomLevel('year')}
-              >
-                Back to Year
-              </button>
-            </div>
-
-            <p className="mt-4 text-sm font-medium uppercase tracking-wide text-slate-500">Theme</p>
-            <p className="mt-1 text-base font-medium text-slate-800">{selectedSession.theme}</p>
-            <p className="mt-3 text-sm text-slate-700">{selectedSession.description}</p>
-
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
-              <div>
-                <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Revenue Target
-                </h4>
-                <p className="mt-1 text-sm font-medium text-slate-800">
-                  {selectedSession.revenueTarget ?? 'TBD'}
-                </p>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Daily Structure
-                </h4>
-                <table className="mt-2 w-full border-collapse overflow-hidden rounded-lg border border-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Time</th>
-                      <th className="px-3 py-2 font-semibold">Block</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedSession.dailyStructure.map((row) => (
-                      <tr key={`${row.time}-${row.block}`} className="border-t border-slate-200">
-                        <td className="px-3 py-2 text-slate-700">{row.time}</td>
-                        <td className="px-3 py-2 text-slate-900">{row.block}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="mt-8">
-              <div className="flex items-end justify-between gap-4">
-                <h4 className="text-base font-semibold tracking-tight">Two-Week Chunks</h4>
-                <p className="text-sm text-slate-600">Click a chunk card to zoom in</p>
-              </div>
-
-              <div className="mt-3 grid gap-4 md:grid-cols-2">
-                {selectedSession.chunks.map((chunk) => (
-                  <button
-                    key={chunk.id}
-                    type="button"
-                    className={`rounded-xl border p-4 text-left transition hover:border-slate-400 hover:bg-slate-50 ${
-                      selectedChunkId === chunk.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200'
-                    }`}
-                    onClick={() => {
-                      setSelectedChunkId(chunk.id)
-                      setSelectedWeekNumber(null)
-                      setSelectedDayNumber(null)
-                    }}
-                    aria-pressed={selectedChunkId === chunk.id}
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{chunk.title}</p>
-                    <p className="mt-2 text-base font-semibold text-slate-900">{chunk.subtitle}</p>
-                    <p className="mt-2 text-sm text-slate-700">{buildChunkPreview(chunk)}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-            </section>
-          ) : null}
-
-          {selectedChunk ? (
-            <section aria-label="Selected two-week chunk" className="rounded-xl border border-slate-300 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h4 className="text-lg font-semibold tracking-tight">{selectedChunk.title}</h4>
-                <p className="mt-1 text-sm text-slate-700">{selectedChunk.subtitle}</p>
-              </div>
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                onClick={() => goToZoomLevel('session')}
-              >
-                Back to Session
-              </button>
-            </div>
-
-            {selectedChunk.designPrinciples && selectedChunk.designPrinciples.length > 0 ? (
-              <div className="mt-4">
-                <h5 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Design Principles
-                </h5>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                  {selectedChunk.designPrinciples.map((principle) => (
-                    <li key={principle}>{principle}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <div className="mt-5 flex items-end justify-between gap-4">
-              <h5 className="text-base font-semibold tracking-tight">Two-Week Schedule</h5>
-              <p className="text-sm text-slate-600">Click a week card to zoom in</p>
-            </div>
-
-            <div className="mt-3 grid gap-4 md:grid-cols-2">
-              {selectedChunk.weeks.map((week) => (
-                <button
-                  key={week.weekNumber}
-                  type="button"
-                  className={`rounded-lg border p-4 text-left transition hover:border-slate-400 hover:bg-slate-50 ${
-                    selectedWeekNumber === week.weekNumber ? 'border-slate-900 bg-slate-50' : 'border-slate-200'
-                  }`}
-                  onClick={() => {
-                    setSelectedWeekNumber(week.weekNumber)
-                    setSelectedDayNumber(null)
-                  }}
-                  aria-pressed={selectedWeekNumber === week.weekNumber}
-                >
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Week {week.weekNumber}
-                  </p>
-                  <h5 className="mt-1 text-sm font-semibold text-slate-900">{week.title}</h5>
-
-                  <div className="mt-3 space-y-2">
-                    {week.days.map((day) => (
-                      <div key={day.dayNumber} className="grid grid-cols-[auto_auto_1fr] items-center gap-2 text-xs">
-                        <span className="font-semibold text-slate-900">{day.dayNumber}</span>
-                        <span className="text-slate-600">{day.dayOfWeek}</span>
-                        <div className="flex flex-wrap items-center gap-1">
-                          {getDayBlockTypes(day).map((blockType) => {
-                            const presentation = getBlockTypePresentation(blockType)
-                            return (
-                              <span
-                                key={`${day.dayNumber}-${blockType}`}
-                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${presentation.badgeClassName}`}
-                                title={presentation.label}
-                                aria-label={presentation.label}
-                              >
-                                {presentation.shortLabel}
-                              </span>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </button>
+      {/* Breadcrumbs + Back */}
+      {view.level !== 'year' && (
+        <div className="border-b border-stone-100 bg-white px-6 py-2.5 sm:px-8">
+          <div className="mx-auto flex max-w-6xl items-center gap-3">
+            <button onClick={goBack} className="mr-1 rounded-md p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-600">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <nav className="flex items-center gap-1 text-sm">
+              {breadcrumbs.map((bc, i) => (
+                <span key={i} className="flex items-center gap-1">
+                  {i > 0 && <span className="text-stone-300">/</span>}
+                  {i < breadcrumbs.length - 1 ? (
+                    <button onClick={bc.action} className="text-stone-500 hover:text-stone-800 hover:underline">{bc.label}</button>
+                  ) : (
+                    <span className="font-medium text-stone-800">{bc.label}</span>
+                  )}
+                </span>
               ))}
+            </nav>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <main className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
+        {view.level === 'year' && <YearView segments={segments} onSelectSession={(id) => {
+          const s = sessions.find(s => s.id === id)
+          if (s) setView({ level: 'session', session: s })
+        }} />}
+
+        {view.level === 'session' && <SessionView session={view.session} onSelectChunk={(c) => setView({ level: 'chunk', session: view.session, chunk: c })} />}
+
+        {view.level === 'chunk' && <ChunkView session={view.session} chunk={view.chunk} onSelectWeek={(w) => setView({ level: 'week', session: view.session, chunk: view.chunk, week: w })} />}
+
+        {view.level === 'week' && <WeekView week={view.week} onSelectDay={(d) => setView({ level: 'day', session: view.session, chunk: view.chunk, week: view.week, day: d })} />}
+
+        {view.level === 'day' && <DayView day={view.day} />}
+      </main>
+    </div>
+  )
+}
+
+/* ============================================
+   YEAR VIEW
+   ============================================ */
+
+function YearView({ segments, onSelectSession }: { segments: ReturnType<typeof buildYearOverviewSegments>; onSelectSession: (id: string) => void }) {
+  return (
+    <div className="space-y-8">
+      {/* Timeline */}
+      <div>
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-stone-400">Full Year Timeline</h2>
+        <div className="flex h-20 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm sm:h-24">
+          {segments.map((seg) => (
+            seg.isSession ? (
+              <button
+                key={seg.id}
+                onClick={() => onSelectSession(seg.id)}
+                className="group relative flex items-end overflow-hidden border-r border-white/20 px-3 py-2.5 text-left text-white transition-all hover:brightness-110"
+                style={{ width: `${seg.widthPercent}%`, backgroundColor: seg.color }}
+              >
+                <div className="relative z-10">
+                  <p className="text-[10px] font-medium uppercase tracking-wider opacity-80">{seg.durationDays} days</p>
+                  <p className="mt-0.5 truncate text-xs font-semibold sm:text-sm">{seg.title}</p>
+                </div>
+                <div className="absolute inset-0 bg-black/0 transition group-hover:bg-black/5" />
+              </button>
+            ) : (
+              <div
+                key={seg.id}
+                className="flex items-end border-r border-white/20 bg-stone-200 px-2 py-2.5"
+                style={{ width: `${seg.widthPercent}%` }}
+              >
+                <p className="truncate text-[10px] font-medium text-stone-500">{seg.title}</p>
+              </div>
+            )
+          ))}
+        </div>
+      </div>
+
+      {/* Session Cards */}
+      <div>
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-stone-400">Sessions</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sessions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => onSelectSession(s.id)}
+              className="group rounded-xl border border-stone-200 bg-white p-5 text-left shadow-sm transition hover:border-stone-300 hover:shadow-md"
+            >
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Session {s.number}</p>
+              </div>
+              <h3 className="mt-2 text-lg font-semibold tracking-tight group-hover:text-stone-700">{s.title}</h3>
+              <p className="mt-1 text-sm italic text-stone-500">{s.theme}</p>
+              <div className="mt-3 flex items-center gap-3 text-xs text-stone-400">
+                <span>{s.durationWeeks} weeks</span>
+                {s.revenueTarget && <><span>·</span><span>{s.revenueTarget}</span></>}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <Legend />
+    </div>
+  )
+}
+
+/* ============================================
+   SESSION VIEW
+   ============================================ */
+
+function SessionView({ session, onSelectChunk }: { session: Session; onSelectChunk: (c: TwoWeekChunk) => void }) {
+  return (
+    <div className="space-y-8">
+      {/* Hero */}
+      <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-2">
+          <div className="h-3 w-3 rounded-full" style={{ backgroundColor: session.color }} />
+          <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Session {session.number}</p>
+        </div>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight">{session.title}</h2>
+        <p className="mt-1 text-base italic text-stone-500">{session.theme}</p>
+        <p className="mt-3 text-sm leading-relaxed text-stone-600">{session.description}</p>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-lg bg-stone-50 px-4 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Duration</p>
+            <p className="mt-1 text-sm font-semibold">{session.durationWeeks} weeks</p>
+          </div>
+          {session.revenueTarget && (
+            <div className="rounded-lg bg-stone-50 px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Revenue Target</p>
+              <p className="mt-1 text-sm font-semibold">{session.revenueTarget}</p>
             </div>
+          )}
+          {session.firstBook && (
+            <div className="rounded-lg bg-stone-50 px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Book</p>
+              <p className="mt-1 text-sm font-semibold">{session.firstBook}</p>
+            </div>
+          )}
+        </div>
+      </div>
 
-            {selectedWeek ? (
-              <>
-                <p className="mt-4 text-sm text-slate-700">
-                  Zoomed to Week {selectedWeek.weekNumber}: {selectedWeek.title}
-                </p>
+      {/* Daily Structure */}
+      <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-400">Daily Structure</h3>
+        <div className="mt-3 space-y-1">
+          {session.dailyStructure.map((row, i) => (
+            <div key={i} className="flex items-center gap-4 rounded-lg px-3 py-2 even:bg-stone-50">
+              <span className="w-28 text-sm font-medium text-stone-500">{row.time}</span>
+              <span className="text-sm font-medium text-stone-800">{row.block}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
-                <section aria-label="Week view" className="mt-4 rounded-lg border border-slate-200 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Week View</p>
-                      <h6 className="mt-1 text-base font-semibold text-slate-900">
-                        Week {selectedWeek.weekNumber}: {selectedWeek.title}
-                      </h6>
+      {/* Chunks */}
+      <div>
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-stone-400">Two-Week Blocks</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {session.chunks.map((chunk) => {
+            const workshopTopics = chunk.weeks.flatMap(w =>
+              w.days.flatMap(d => d.blocks.filter(b => b.type === 'workshop').map(b => b.title))
+            ).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4)
+
+            return (
+              <button
+                key={chunk.id}
+                onClick={() => onSelectChunk(chunk)}
+                className="group rounded-xl border border-stone-200 bg-white p-5 text-left shadow-sm transition hover:border-stone-300 hover:shadow-md"
+              >
+                <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">{chunk.title}</p>
+                <h4 className="mt-1.5 text-lg font-semibold tracking-tight">{chunk.subtitle}</h4>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {workshopTopics.map((topic) => (
+                    <span key={topic} className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-100">{topic}</span>
+                  ))}
+                </div>
+                {chunk.endNote && <p className="mt-3 text-xs italic text-stone-400 line-clamp-2">{chunk.endNote}</p>}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================
+   CHUNK VIEW (Two-Week)
+   ============================================ */
+
+function ChunkView({ session, chunk, onSelectWeek }: { session: Session; chunk: TwoWeekChunk; onSelectWeek: (w: WeekPlan) => void }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Session {session.number} · {chunk.title}</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight">{chunk.subtitle}</h2>
+      </div>
+
+      {chunk.designPrinciples && chunk.designPrinciples.length > 0 && (
+        <div className="rounded-xl border border-stone-200 bg-white p-5">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400">Design Principles</h3>
+          <ul className="mt-2 space-y-1.5">
+            {chunk.designPrinciples.map((p, i) => (
+              <li key={i} className="flex gap-2 text-sm text-stone-600">
+                <span className="mt-0.5 text-stone-300">•</span>
+                <span>{p}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {chunk.weeks.map((week) => (
+          <button
+            key={week.weekNumber}
+            onClick={() => onSelectWeek(week)}
+            className="group rounded-xl border border-stone-200 bg-white p-5 text-left shadow-sm transition hover:border-stone-300 hover:shadow-md"
+          >
+            <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Week {week.weekNumber}</p>
+            <h4 className="mt-1 text-lg font-semibold tracking-tight">{week.title}</h4>
+
+            <div className="mt-4 space-y-1.5">
+              {week.days.map((day) => {
+                const importantBlocks = day.blocks.filter(b => !['academics', 'fitness'].includes(b.type))
+                return (
+                  <div key={day.dayNumber} className="flex items-start gap-3 rounded-lg px-2 py-1.5 transition group-hover:bg-stone-50">
+                    <div className="flex w-16 shrink-0 items-center gap-1.5">
+                      <span className="text-xs font-bold text-stone-800">{day.dayOfWeek}</span>
+                      <span className="text-[10px] text-stone-400">D{day.dayNumber}</span>
                     </div>
-
-                    {selectedDay ? (
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                        onClick={() => goToZoomLevel('week')}
-                      >
-                        Back to Week
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <p className="mt-2 text-sm text-slate-600">Click a day card to zoom into the full day view.</p>
-
-                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                    {selectedWeek.days.map((day) => (
-                      <button
-                        key={day.dayNumber}
-                        type="button"
-                        className={`rounded-lg border p-4 text-left transition hover:border-slate-400 hover:bg-slate-50 ${
-                          selectedDayNumber === day.dayNumber ? 'border-slate-900 bg-slate-50' : 'border-slate-200'
-                        }`}
-                        onClick={() => setSelectedDayNumber(day.dayNumber)}
-                        aria-pressed={selectedDayNumber === day.dayNumber}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <h6 className="text-sm font-semibold text-slate-900">
-                            {day.dayOfWeek} · Day {day.dayNumber}
-                          </h6>
-                          {day.date ? (
-                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{day.date}</p>
-                          ) : null}
-                        </div>
-
-                        <div className="mt-4 space-y-3">
-                          {day.blocks.map((block, index) => {
-                            const presentation = getBlockTypePresentation(block.type)
-                            return (
-                              <div key={`${day.dayNumber}-${block.time}-${block.title}`} className="grid grid-cols-[auto_1fr] gap-3">
-                                <div className="flex flex-col items-center">
-                                  <span
-                                    className={`h-2.5 w-2.5 rounded-full border ${presentation.badgeClassName}`}
-                                    aria-hidden="true"
-                                  />
-                                  {index < day.blocks.length - 1 ? (
-                                    <span className="mt-1 h-full w-px bg-slate-200" aria-hidden="true" />
-                                  ) : null}
-                                </div>
-
-                                <article className={`rounded-md border p-3 ${getBlockCardClassName(block.type)}`}>
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                                    {block.time}
-                                  </p>
-                                  <p className="mt-1 text-sm font-semibold text-slate-900">{block.title}</p>
-                                  <p className="mt-1 text-xs text-slate-700">
-                                    {truncateBlockDescription(block.description)}
-                                  </p>
-                                </article>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                {selectedDay ? (
-                  <section
-                    aria-label="Day view"
-                    className="mt-4 overflow-hidden rounded-lg border border-slate-300 bg-white"
-                  >
-                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Day View · Leaf Node
-                      </p>
-                      <h6 className="mt-1 text-lg font-semibold leading-tight text-slate-900">
-                        {getDayHeading(selectedDay)}
-                      </h6>
-                      {selectedDay.date ? (
-                        <p className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-                          {selectedDay.date}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="divide-y divide-slate-200">
-                      {selectedDay.blocks.map((block) => {
-                        const presentation = getBlockTypePresentation(block.type)
-
+                    <div className="flex flex-wrap gap-1">
+                      {importantBlocks.map((block, i) => {
+                        const c = blockColors[block.type] || blockColors.other
                         return (
-                          <article
-                            key={`${selectedDay.dayNumber}-${block.time}-${block.title}`}
-                            className={`grid gap-4 px-4 py-4 md:grid-cols-[9.5rem_1fr] ${getBlockCardClassName(block.type)}`}
-                          >
-                            <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                Time Range
-                              </p>
-                              <p className="mt-1 text-sm font-semibold text-slate-900">{block.time}</p>
-                            </div>
-
-                            <div>
-                              <span
-                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${presentation.badgeClassName}`}
-                              >
-                                {presentation.label}
-                              </span>
-                              <p className="mt-2 text-sm font-semibold text-slate-900">{block.title}</p>
-                              <p className="mt-1 text-sm leading-relaxed text-slate-700">
-                                {getBlockDescription(block.description)}
-                              </p>
-                            </div>
-                          </article>
+                          <span key={i} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${c.bg} ${c.text}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+                            {block.title.length > 25 ? block.title.slice(0, 25) + '…' : block.title}
+                          </span>
                         )
                       })}
                     </div>
-                  </section>
-                ) : null}
-              </>
-            ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </button>
+        ))}
+      </div>
 
-            {selectedChunk.endNote ? <p className="mt-4 text-sm text-slate-700">{selectedChunk.endNote}</p> : null}
-            </section>
-          ) : null}
-        </div>
-      </main>
+      {chunk.endNote && (
+        <p className="rounded-lg bg-stone-100 px-4 py-3 text-sm italic text-stone-600">{chunk.endNote}</p>
+      )}
+    </div>
+  )
+}
+
+/* ============================================
+   WEEK VIEW
+   ============================================ */
+
+function WeekView({ week, onSelectDay }: { week: WeekPlan; onSelectDay: (d: DayPlan) => void }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Week {week.weekNumber}</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight">{week.title}</h2>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {week.days.map((day) => {
+          const importantBlocks = day.blocks.filter(b => !['academics', 'fitness'].includes(b.type))
+          return (
+            <button
+              key={day.dayNumber}
+              onClick={() => onSelectDay(day)}
+              className="group rounded-xl border border-stone-200 bg-white p-4 text-left shadow-sm transition hover:border-stone-300 hover:shadow-md"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-stone-800">
+                  {day.dayOfWeek} <span className="font-normal text-stone-400">· Day {day.dayNumber}</span>
+                </h3>
+                {day.date && <span className="text-[10px] text-stone-400">{day.date}</span>}
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {importantBlocks.map((block, i) => {
+                  const c = blockColors[block.type] || blockColors.other
+                  return (
+                    <div key={i} className={`rounded-lg border px-3 py-2 ${c.bg}`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+                        <span className={`text-[10px] font-medium ${c.text}`}>{block.time}</span>
+                      </div>
+                      <p className="mt-0.5 text-xs font-semibold text-stone-800">{block.title}</p>
+                      {block.description && (
+                        <p className="mt-0.5 text-[11px] text-stone-500 line-clamp-2">{block.description}</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* ============================================
+   DAY VIEW
+   ============================================ */
+
+function DayView({ day }: { day: DayPlan }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Day {day.dayNumber}</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight">{day.dayOfWeek}</h2>
+        {day.date && <p className="mt-1 text-sm text-stone-400">{day.date}</p>}
+      </div>
+
+      <div className="space-y-3">
+        {day.blocks.map((block, i) => {
+          const c = blockColors[block.type] || blockColors.other
+          const isMuted = ['academics', 'fitness'].includes(block.type)
+
+          return (
+            <div
+              key={i}
+              className={`rounded-xl border p-4 ${isMuted ? 'border-stone-100 bg-stone-50/50' : `${c.bg} shadow-sm`}`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${c.dot}`} />
+                <span className={`text-xs font-semibold uppercase tracking-wider ${isMuted ? 'text-stone-400' : c.text}`}>
+                  {blockLabels[block.type] || block.type}
+                </span>
+                <span className="ml-auto text-xs text-stone-400">{block.time}</span>
+              </div>
+              <h3 className={`mt-2 font-semibold ${isMuted ? 'text-sm text-stone-400' : 'text-base text-stone-800'}`}>{block.title}</h3>
+              {block.description && !isMuted && (
+                <p className="mt-1.5 text-sm leading-relaxed text-stone-600">{block.description}</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* ============================================
+   LEGEND
+   ============================================ */
+
+function Legend() {
+  const legendItems = ['workshop', 'business', 'media', 'roundtable', 'harkness', 'presentation', 'reflection', 'awards']
+  return (
+    <div className="flex flex-wrap items-center gap-3 pt-2">
+      {legendItems.map((type) => {
+        const c = blockColors[type] || blockColors.other
+        return (
+          <div key={type} className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${c.dot}`} />
+            <span className="text-[11px] text-stone-500">{blockLabels[type]}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
